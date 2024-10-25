@@ -6,11 +6,18 @@ const path = require('path');
 const port = 3000;
 const fs = require('fs');
 const axios = require('axios');
+const jwt = require('jsonwebtoken');
+const jwksClient = require('jwks-rsa');
+
 
 const domain = 'dev-dujfreb276bpey3g.us.auth0.com'; 
 const clientId = 'voRbP8j6Kw5Z7okdkyMxax13sij76oBL';
 const clientSecret = 'U9l8qWyFq74iNwpHt7V7doXQsKBm-m80oSk7j_jLiLv-pHGL1zRqjRYNd1RDbw0g';
 const audience = `https://${domain}/api/v2/`; // Аудиторія (API_IDENTIFIER)
+
+const client = jwksClient({
+    jwksUri: `https://${domain}/.well-known/jwks.json`
+});
 
 const SESSION_KEY = 'Authorization';
 const app = express();
@@ -119,7 +126,7 @@ app.use((req, res, next) => {
 
     if (sessionId) {
         currentSession = sessions.get(sessionId);
-        if (!currentSession) {
+if (!currentSession) {
             currentSession = {};
             sessionId = sessions.init(res);
         }
@@ -137,6 +144,35 @@ app.use((req, res, next) => {
     });
 
     next();
+});
+
+app.use('/api/secure', async (req, res, next) => {
+    const token = req.headers.authorization?.split(' ')[1];
+
+    if (!token) {
+        return res.status(401).send('Access token required');
+    }
+
+    try {
+        const decoded = await verifyToken(token);
+        req.user = decoded;
+        next();
+    } catch (err) {
+        console.error('Token verification failed:', err.message);
+        res.status(401).send('Invalid token');
+    }
+});
+
+app.get('/api/protected', async (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) return res.status(401).send('Access token missing');
+
+    try {
+        const decoded = await verifyToken(token);
+        res.json({ message: 'Access granted', user: decoded });
+    } catch (error) {
+        res.status(403).json({ message: 'Invalid token', error });
+    }
 });
 
 app.get('/', (req, res) => {
@@ -306,6 +342,29 @@ async function refreshAccessToken(refreshToken) {
     } catch (error) {
         console.error('Error refreshing access token:', error.response ? error.response.data : error.message);
     }
+}
+
+function getKey(header, callback) {
+    client.getSigningKey(header.kid, (err, key) => {
+        if (err) {
+            callback(err);
+        } else {
+            const signingKey = key.getPublicKey();
+            callback(null, signingKey);
+        }
+    });
+}
+
+function verifyToken(token) {
+    return new Promise((resolve, reject) => {
+        jwt.verify(token, getKey, { algorithms: ['RS256'] }, (err, decoded) => {
+            if (err) {
+                reject(err);
+            } else {
+                resolve(decoded);
+            }
+        });
+    });
 }
 
 async function main() {
