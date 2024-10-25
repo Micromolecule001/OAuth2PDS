@@ -95,7 +95,7 @@ app.post('/api/login', (req, res) => {
     res.redirect('/login');
 });
 
-// Logout route
+// Logout route 
 app.get('/logout', (req, res) => {
     const sessionId = req.get(SESSION_KEY);
     sessions.delete(sessionId);
